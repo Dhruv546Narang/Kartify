@@ -28,6 +28,7 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from './src/store/authStore';
 import { useCartStore } from './src/store/cartStore';
+import { usePlatformStore } from './src/store/platformStore';
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -39,6 +40,8 @@ import AlertsScreen from './src/screens/AlertsScreen';
 import SavingsScreen from './src/screens/SavingsScreen';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CheckoutScreen from './src/screens/CheckoutScreen';
+import ConnectedAccountsScreen from './src/screens/ConnectedAccountsScreen';
+import PlatformLoginScreen from './src/screens/PlatformLoginScreen';
 import { ScalePressable } from './src/components/GlassPrimitives';
 
 const AuthStack = createNativeStackNavigator();
@@ -199,6 +202,16 @@ function AppNavigator() {
         component={HistoryScreen}
         options={{ animation: 'slide_from_right' }}
       />
+      <AppStack.Screen
+        name="ConnectedAccounts"
+        component={ConnectedAccountsScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <AppStack.Screen
+        name="PlatformLogin"
+        component={PlatformLoginScreen}
+        options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+      />
     </AppStack.Navigator>
   );
 }
@@ -219,6 +232,7 @@ function SplashScreen() {
 
 export default function App() {
   const { isLoggedIn, isLoading, loadFromStorage } = useAuthStore();
+  const hydratePlatforms = usePlatformStore(s => s.hydrate);
   const [nunitoLoaded] = useNunitoFonts({
     Nunito_400Regular,
     Nunito_600SemiBold,
@@ -244,6 +258,7 @@ export default function App() {
 
   useEffect(() => {
     loadFromStorage();
+    hydratePlatforms();
   }, []);
 
   if (isLoading || !nunitoLoaded || !playfairLoaded) {

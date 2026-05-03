@@ -1,52 +1,71 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, Pressable, ScrollView,
+  ActivityIndicator, FlatList, Image, Linking, Pressable, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useSearch, GroupedProduct } from '../hooks/useSearch';
-import { useLocationWeather } from '../hooks/useLocationWeather';
-import client from '../api/client';
 import { PLATFORM_STYLES } from '../components/PlatformBadge';
-
-/* ═══════════════════════════════════════════════════════
-   TYPES
-   ═══════════════════════════════════════════════════════ */
-
-interface SuggestionsResponse {
-  query: string;
-  suggestions: string[];
-}
+import { usePlatformStore, PLATFORM_CONFIGS } from '../store/platformStore';
+import { useOnDeviceSearch, type GroupedProduct } from '../hooks/useOnDeviceSearch';
+import WebViewSearcher, { type ScrapedProduct } from '../components/WebViewSearcher';
 
 /* ═══════════════════════════════════════════════════════
    CONSTANTS
    ═══════════════════════════════════════════════════════ */
 
 const TRENDING = [
-  'Monster Energy Drink', 'Milk 1 litre', 'Eggs 12 pcs', 'Bread',
+  'Milk 1 litre', 'Eggs 12 pcs', 'Bread', 'Monster Energy',
   'Aata 5kg', 'Curd', 'Banana', 'Cold drink',
 ];
-const SORTS = ['Best Match', 'Cheapest', 'Fastest'];
+const SORTS = ['Best Match', 'Cheapest', 'Most Platforms'];
 const FILTERS = ['All', 'In Stock'];
 
 /* ═══════════════════════════════════════════════════════
    UTILS
    ═══════════════════════════════════════════════════════ */
 
-const topFallback = (q: string) => {
-  const n = q.toLowerCase().trim();
-  if (!n) return TRENDING.slice(0, 7);
-  const f = TRENDING.filter(i => i.toLowerCase().includes(n));
-  return (f.length ? f : TRENDING).slice(0, 7);
-};
-
 function formatINR(v: number) {
   return `₹${Math.round(v).toLocaleString('en-IN')}`;
 }
 
 /* ═══════════════════════════════════════════════════════
-   RESULT CARD — Full name, 2-line, platform price pills
+   PLATFORM STATUS DOTS (shows which platforms are searching)
+   ═══════════════════════════════════════════════════════ */
+
+function PlatformStatusRow({ platformStatus }: { platformStatus: Record<string, string> }) {
+  if (Object.keys(platformStatus).length === 0) return null;
+
+  return (
+    <View style={styles.statusRow}>
+      {Object.entries(platformStatus).map(([platId, status]) => {
+        const config = PLATFORM_CONFIGS.find(p => p.id === platId);
+        if (!config) return null;
+        const ps = PLATFORM_STYLES[platId] || { bg: '#888' };
+        return (
+          <View key={platId} style={styles.statusChip}>
+            <View style={[styles.statusDot, {
+              backgroundColor: status === 'done' ? '#4F7A55'
+                : status === 'error' ? '#C4855A'
+                : ps.bg || config.color,
+            }]} />
+            <Text style={styles.statusName}>{config.name.split(' ')[0]}</Text>
+            {status === 'loading' || status === 'pending' ? (
+              <ActivityIndicator size={10} color={config.color} style={{ marginLeft: 2 }} />
+            ) : status === 'done' ? (
+              <Ionicons name="checkmark" size={12} color="#4F7A55" />
+            ) : (
+              <Ionicons name="close" size={12} color="#C4855A" />
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   RESULT CARD
    ═══════════════════════════════════════════════════════ */
 
 function ResultCard({ item, onPress }: { item: GroupedProduct; onPress: () => void }) {
@@ -54,9 +73,7 @@ function ResultCard({ item, onPress }: { item: GroupedProduct; onPress: () => vo
   const cheapest = item.platforms[0];
   const imageUri = item.image_url || item.image || '';
 
-  useEffect(() => {
-    setImgErr(false);
-  }, [imageUri]);
+  useEffect(() => { setImgErr(false); }, [imageUri]);
 
   return (
     <Pressable onPress={onPress}
@@ -80,7 +97,7 @@ function ResultCard({ item, onPress }: { item: GroupedProduct; onPress: () => vo
 
         {/* Platform price pills */}
         <View style={styles.pillRow}>
-          {item.platforms.slice(0, 3).map((p, idx) => {
+          {item.platforms.slice(0, 4).map((p, idx) => {
             const ps = PLATFORM_STYLES[p.platform?.toLowerCase()] || { bg: '#888' };
             return (
               <View key={idx} style={[styles.pricePill, idx === 0 && styles.pricePillFirst]}>
@@ -91,18 +108,23 @@ function ResultCard({ item, onPress }: { item: GroupedProduct; onPress: () => vo
               </View>
             );
           })}
-          {item.platforms.length > 3 && (
-            <Text style={styles.pillMore}>+{item.platforms.length - 3} more</Text>
+          {item.platforms.length > 4 && (
+            <Text style={styles.pillMore}>+{item.platforms.length - 4}</Text>
           )}
         </View>
       </View>
 
-      {/* Right: cheapest price, count */}
+      {/* Right: cheapest price */}
       <View style={styles.resultRight}>
         <Text style={styles.resultPrice}>{formatINR(cheapest?.price || 0)}</Text>
         <Text style={styles.resultPlatCount}>
           {item.platforms.length > 1 ? `${item.platforms.length} platforms` : cheapest?.platform || ''}
         </Text>
+        {item.platforms.length > 1 && (() => {
+          const saving = item.platforms[item.platforms.length - 1].price - item.platforms[0].price;
+          if (saving <= 0) return null;
+          return <Text style={styles.savingBadge}>Save ₹{Math.round(saving)}</Text>;
+        })()}
         <Text style={styles.chevron}>›</Text>
       </View>
     </Pressable>
@@ -116,60 +138,45 @@ function ResultCard({ item, onPress }: { item: GroupedProduct; onPress: () => vo
 export default function SearchScreen({ navigation, route }: { navigation: any; route: any }) {
   const searchInputRef = useRef<TextInput>(null);
   const [queryInput, setQueryInput] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>(TRENDING.slice(0, 7));
-  const [loadingSug, setLoadingSug] = useState(false);
   const [activeFilter, setActiveFilter] = useState('All');
   const [activeSort, setActiveSort] = useState('Best Match');
-  const { lat, lon, pincode } = useLocationWeather();
-  const { results, isLoading, error, query, count, cached, source, search } = useSearch();
 
-  // Handle autoFocus & filters from route params
+  // Platform store
+  const connectedPlatforms = usePlatformStore(s => Object.keys(s.sessions));
+  const hasConnected = connectedPlatforms.length > 0;
+
+  // On-device search
+  const {
+    results, isLoading, error, query, count, source,
+    platformStatus, activePlatforms,
+    startSearch, onPlatformResults, onPlatformError, clearResults,
+  } = useOnDeviceSearch();
+
+  // Active search query for WebView searchers
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Handle route params
   useEffect(() => {
     if (route.params?.autoFocus) searchInputRef.current?.focus();
-    if (route.params?.platformFilter) {
-      const pf = route.params.platformFilter;
-      setQueryInput(pf);
-      runSearch(pf);
-    }
     if (route.params?.categoryName) {
       setQueryInput(route.params.categoryName);
       runSearch(route.params.categoryName);
     }
-  }, [route.params?.autoFocus, route.params?.platformFilter, route.params?.categoryName]);
+  }, [route.params?.autoFocus, route.params?.categoryName]);
 
-  // Suggestions
-  useEffect(() => {
-    let alive = true;
-    const timer = setTimeout(async () => {
-      setLoadingSug(true);
-      try {
-        const res = await client.get<SuggestionsResponse>(
-          '/search/suggestions', { params: { q: queryInput.trim() } }
-        );
-        if (!alive) return;
-        const s = res.data?.suggestions || [];
-        setSuggestions(s.length ? s.slice(0, 7) : topFallback(queryInput));
-      } catch {
-        if (alive) setSuggestions(topFallback(queryInput));
-      } finally {
-        if (alive) setLoadingSug(false);
-      }
-    }, 220);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [queryInput]);
-
-  // Map sort chip label to API param
-  const SORT_MAP: Record<string, string> = {
-    'Best Match': 'best_match',
-    'Cheapest': 'cheapest',
-    'Fastest': 'fastest',
+  const runSearch = (raw: string) => {
+    const t = raw.trim();
+    if (!t) return;
+    if (!hasConnected) return; // Can't search without connected accounts
+    setQueryInput(t);
+    setSearchQuery(t);
+    startSearch(t, connectedPlatforms);
   };
 
-  // Apply client-side stock filter only (sorting is done by the API)
+  // Apply sort & filter
   const displayResults = useMemo(() => {
     let items = results ?? [];
 
-    // Stock filter (client-side — not a backend param)
     if (activeFilter === 'In Stock') {
       items = items.map(g => ({
         ...g,
@@ -177,16 +184,14 @@ export default function SearchScreen({ navigation, route }: { navigation: any; r
       })).filter(g => g.platforms.length > 0);
     }
 
-    return items;
-  }, [results, activeFilter]);
+    if (activeSort === 'Cheapest') {
+      items = [...items].sort((a, b) => (a.platforms[0]?.price || 999) - (b.platforms[0]?.price || 999));
+    } else if (activeSort === 'Most Platforms') {
+      items = [...items].sort((a, b) => b.platforms.length - a.platforms.length);
+    }
 
-  const runSearch = async (raw: string, sort?: string) => {
-    const t = raw.trim();
-    if (!t) return;
-    setQueryInput(t);
-    const sortParam = sort || SORT_MAP[activeSort] || 'best_match';
-    await search(t, { lat: lat ?? undefined, lon: lon ?? undefined, pincode: pincode ?? undefined, sort: sortParam });
-  };
+    return items;
+  }, [results, activeFilter, activeSort]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -194,19 +199,43 @@ export default function SearchScreen({ navigation, route }: { navigation: any; r
       <View style={styles.container}>
         <View style={styles.topBar}>
           <Text style={styles.title}>Explore</Text>
+          {/* Connect accounts button */}
+          <Pressable onPress={() => navigation.getParent()?.navigate('ConnectedAccounts')}
+            style={({ pressed }) => [styles.connectAccountsBtn, { transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+            <Ionicons name="link-outline" size={16} color={hasConnected ? '#4F7A55' : '#C4855A'} />
+            <Text style={[styles.connectAccountsText, { color: hasConnected ? '#4F7A55' : '#C4855A' }]}>
+              {hasConnected ? `${connectedPlatforms.length} linked` : 'Link accounts'}
+            </Text>
+          </Pressable>
         </View>
+
+        {/* No connected accounts banner */}
+        {!hasConnected && (
+          <Pressable onPress={() => navigation.getParent()?.navigate('ConnectedAccounts')}
+            style={({ pressed }) => [styles.connectBanner, { transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
+            <Ionicons name="key-outline" size={22} color="#C4855A" />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.connectBannerTitle}>Connect your grocery accounts</Text>
+              <Text style={styles.connectBannerDesc}>
+                Log in to Blinkit, Zepto, BigBasket etc. to compare live prices from your own accounts
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#C4855A" />
+          </Pressable>
+        )}
 
         {/* Search input */}
         <View style={styles.searchBar}>
           <Ionicons name="search-outline" size={18} color="#7A8C7B" />
           <TextInput ref={searchInputRef} style={styles.searchInput}
-            placeholder="Search milk, eggs, bread..."
+            placeholder={hasConnected ? 'Search milk, eggs, bread...' : 'Connect accounts first to search'}
             placeholderTextColor="#7A8C7B"
             value={queryInput} onChangeText={setQueryInput}
             onSubmitEditing={() => runSearch(queryInput)}
-            returnKeyType="search" />
+            returnKeyType="search"
+            editable={hasConnected} />
           {queryInput.length > 0 ? (
-            <Pressable onPress={() => setQueryInput('')}>
+            <Pressable onPress={() => { setQueryInput(''); clearResults(); setSearchQuery(''); }}>
               <Ionicons name="close-circle" size={20} color="#7A8C7B" />
             </Pressable>
           ) : (
@@ -218,10 +247,7 @@ export default function SearchScreen({ navigation, route }: { navigation: any; r
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipRow}>
           {SORTS.map(s => (
-            <Pressable key={s} onPress={() => {
-              setActiveSort(s);
-              if (queryInput.trim()) runSearch(queryInput, SORT_MAP[s]);
-            }}
+            <Pressable key={s} onPress={() => setActiveSort(s)}
               style={({ pressed }) => [
                 styles.chip, activeSort === s && styles.chipActive,
                 { transform: [{ scale: pressed ? 0.96 : 1 }] },
@@ -241,29 +267,27 @@ export default function SearchScreen({ navigation, route }: { navigation: any; r
           ))}
         </ScrollView>
 
-        {/* Suggestions */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.sugRow}>
-          {suggestions.map(s => (
-            <Pressable key={s} onPress={() => runSearch(s)}
-              style={({ pressed }) => [styles.sugChip, { transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
-              <Text style={styles.sugText}>{s}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {/* Trending suggestions */}
+        {!searchQuery && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.sugRow}>
+            {TRENDING.map(s => (
+              <Pressable key={s} onPress={() => runSearch(s)}
+                style={({ pressed }) => [styles.sugChip, { transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+                <Text style={styles.sugText}>{s}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+
+        {/* Platform search status */}
+        <PlatformStatusRow platformStatus={platformStatus} />
 
         {/* Count */}
         <Text style={styles.countText}>
-          {displayResults.length} results for "{query || queryInput || '...'}"
-          {cached ? ' • cached' : ''}{source === 'mock' ? ' • demo' : ''}
+          {displayResults.length} results{query ? ` for "${query}"` : ''}
+          {source === 'on-device' && searchQuery ? ' · live from your accounts' : ''}
         </Text>
-
-        {/* Error */}
-        {error && (
-          <View style={styles.errCard}>
-            <Text style={styles.errText}>{error}</Text>
-          </View>
-        )}
 
         {/* Results list */}
         <FlatList
@@ -280,7 +304,7 @@ export default function SearchScreen({ navigation, route }: { navigation: any; r
                     id: item.id,
                     name: item.name,
                     unit: item.unit,
-                    image: item.image_url,
+                    image: item.image_url || item.image,
                     platforms: item.platforms,
                   },
                 })
@@ -291,22 +315,46 @@ export default function SearchScreen({ navigation, route }: { navigation: any; r
             isLoading ? (
               <View style={styles.loading}>
                 <ActivityIndicator size="large" color="#4F7A55" />
+                <Text style={styles.loadingText}>Searching your connected platforms...</Text>
               </View>
             ) : (
               <View style={styles.empty}>
                 <Text style={{ fontSize: 56 }}>🛍️</Text>
-                <Text style={styles.emptyH}>No products yet</Text>
-                <Text style={styles.emptyB}>
-                  Search for any grocery product to compare live prices.
+                <Text style={styles.emptyH}>
+                  {hasConnected ? 'Search for any product' : 'Connect your accounts first'}
                 </Text>
-                <Pressable onPress={() => runSearch('milk')}
-                  style={({ pressed }) => [styles.emptyCta, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
-                  <Text style={styles.emptyCtaT}>Try "milk"</Text>
-                </Pressable>
+                <Text style={styles.emptyB}>
+                  {hasConnected
+                    ? 'We\'ll check live prices across all your connected grocery platforms.'
+                    : 'Link your Blinkit, Zepto, BigBasket accounts to start comparing prices.'
+                  }
+                </Text>
+                {hasConnected ? (
+                  <Pressable onPress={() => runSearch('milk')}
+                    style={({ pressed }) => [styles.emptyCta, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+                    <Text style={styles.emptyCtaT}>Try "milk"</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable onPress={() => navigation.getParent()?.navigate('ConnectedAccounts')}
+                    style={({ pressed }) => [styles.emptyCta, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+                    <Text style={styles.emptyCtaT}>Connect Accounts</Text>
+                  </Pressable>
+                )}
               </View>
             )
           }
         />
+
+        {/* Hidden WebView searchers — one per connected platform */}
+        {searchQuery && activePlatforms.map(platId => (
+          <WebViewSearcher
+            key={`${platId}_${searchQuery}`}
+            platformId={platId}
+            query={searchQuery}
+            onResults={(products) => onPlatformResults(platId, products)}
+            onError={(err) => onPlatformError(platId, err)}
+          />
+        ))}
       </View>
     </SafeAreaView>
   );
@@ -320,8 +368,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F0F4EF' },
   container: { flex: 1, paddingHorizontal: 16 },
 
-  topBar: { height: 50, justifyContent: 'center' },
+  topBar: { height: 50, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#2C3E2D' },
+  connectAccountsBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.3)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
+  connectAccountsText: { fontFamily: 'Nunito_700Bold', fontSize: 12 },
+
+  connectBanner: { marginBottom: 10, borderRadius: 16, padding: 14, backgroundColor: 'rgba(196,133,90,0.08)', borderWidth: 1, borderColor: 'rgba(196,133,90,0.2)', flexDirection: 'row', alignItems: 'center' },
+  connectBannerTitle: { fontFamily: 'Nunito_700Bold', fontSize: 14, color: '#C4855A' },
+  connectBannerDesc: { fontFamily: 'Nunito_600SemiBold', fontSize: 12, color: '#7A8C7B', marginTop: 2 },
 
   searchBar: {
     height: 50, borderRadius: 25,
@@ -357,15 +411,15 @@ const styles = StyleSheet.create({
   },
   sugText: { fontFamily: 'Nunito_600SemiBold', fontSize: 11, color: '#7A8C7B' },
 
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', paddingTop: 8, gap: 6 },
+  statusChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusName: { fontFamily: 'Nunito_600SemiBold', fontSize: 10, color: '#7A8C7B' },
+
   countText: {
     marginTop: 8, marginBottom: 8,
     fontFamily: 'Nunito_600SemiBold', fontSize: 12, color: '#7A8C7B',
   },
-  errCard: {
-    marginBottom: 10, padding: 14, borderRadius: 16,
-    backgroundColor: 'rgba(192,97,74,0.1)',
-  },
-  errText: { fontFamily: 'Nunito_600SemiBold', color: '#C0614A', fontSize: 13 },
 
   /* ── Result Card ── */
   resultCard: {
@@ -382,20 +436,14 @@ const styles = StyleSheet.create({
   },
   resultCenter: { marginLeft: 80, paddingRight: 80 },
   resultName: {
-    fontSize: 14,
-    fontFamily: 'Nunito_700Bold',
-    color: '#2C3E2D',
-    lineHeight: 20,
-    minHeight: 40,
+    fontSize: 14, fontFamily: 'Nunito_700Bold',
+    color: '#2C3E2D', lineHeight: 20, minHeight: 40,
   },
   resultUnit: {
     fontSize: 11, color: '#7A8C7B',
     fontFamily: 'Nunito_600SemiBold', marginTop: 2,
   },
-  pillRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    gap: 6, marginTop: 8,
-  },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   pricePill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(0,0,0,0.04)',
@@ -412,27 +460,16 @@ const styles = StyleSheet.create({
 
   resultRight: { position: 'absolute', top: 14, right: 14, alignItems: 'flex-end' },
   resultPrice: { fontSize: 18, fontFamily: 'Nunito_700Bold', color: '#4F7A55' },
-  resultPlatCount: {
-    fontSize: 10, color: '#7A8C7B', marginTop: 2,
-    fontFamily: 'Nunito_600SemiBold',
-  },
+  resultPlatCount: { fontSize: 10, color: '#7A8C7B', marginTop: 2, fontFamily: 'Nunito_600SemiBold' },
+  savingBadge: { fontSize: 10, color: '#C4855A', fontFamily: 'Nunito_700Bold', marginTop: 3, backgroundColor: 'rgba(196,133,90,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, overflow: 'hidden' },
   chevron: { fontSize: 16, color: '#7A8C7B', marginTop: 4 },
 
   /* ── Empty & Loading ── */
   empty: { alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
-  emptyH: {
-    marginTop: 10, fontFamily: 'PlayfairDisplay_700Bold',
-    fontSize: 18, color: '#2C3E2D',
-  },
-  emptyB: {
-    marginTop: 6, fontFamily: 'Nunito_600SemiBold',
-    fontSize: 14, color: '#7A8C7B', textAlign: 'center', maxWidth: 260,
-  },
-  emptyCta: {
-    marginTop: 16, height: 44, borderRadius: 22,
-    paddingHorizontal: 24, justifyContent: 'center',
-    backgroundColor: '#7A9E7E',
-  },
+  emptyH: { marginTop: 10, fontFamily: 'PlayfairDisplay_700Bold', fontSize: 18, color: '#2C3E2D' },
+  emptyB: { marginTop: 6, fontFamily: 'Nunito_600SemiBold', fontSize: 14, color: '#7A8C7B', textAlign: 'center', maxWidth: 280 },
+  emptyCta: { marginTop: 16, height: 44, borderRadius: 22, paddingHorizontal: 24, justifyContent: 'center', backgroundColor: '#7A9E7E' },
   emptyCtaT: { color: '#fff', fontFamily: 'Nunito_700Bold', fontSize: 14 },
   loading: { paddingTop: 50, alignItems: 'center' },
+  loadingText: { fontFamily: 'Nunito_600SemiBold', fontSize: 13, color: '#7A8C7B', marginTop: 12 },
 });

@@ -19,6 +19,7 @@ const GROUPS = [
   {
     title: 'My Account',
     rows: [
+      { icon: 'link-outline', label: 'Connected Accounts', nav: 'ConnectedAccounts' },
       { icon: 'location-outline', label: 'Saved Addresses' },
       { icon: 'notifications-outline', label: 'Notification Preferences' },
       { icon: 'pricetag-outline', label: 'Preferred Platform' },
@@ -36,7 +37,7 @@ const GROUPS = [
     title: 'Activity',
     rows: [
       { icon: 'time-outline', label: 'Order History' },
-      { icon: 'notifications-circle-outline', label: 'Price Alerts', value: 'Coming soon' },
+      { icon: 'notifications-circle-outline', label: 'Price Alerts' },
     ],
   },
   {
@@ -92,8 +93,15 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
           <View key={group.title} style={styles.groupWrap}>
             <Text style={styles.groupTitle}>{group.title}</Text>
             <GlassCard style={styles.groupCard} intensity={40}>
-              {group.rows.map((row, index) => (
-                <View key={row.label} style={[styles.groupRow, index < group.rows.length - 1 && styles.rowDivider]}>
+              {group.rows.map((row: any, index) => (
+                <ScalePressable
+                  key={row.label}
+                  style={[styles.groupRow, index < group.rows.length - 1 && styles.rowDivider]}
+                  activeStyle={styles.pressActive}
+                  onPress={() => {
+                    if (row.nav) navigation.getParent()?.navigate(row.nav);
+                  }}
+                >
                   <View style={styles.rowLeft}>
                     <Ionicons name={row.icon as keyof typeof Ionicons.glyphMap} size={20} color={GlassTokens.colors.primary} />
                     <Text style={styles.rowLabel}>{row.label}</Text>
@@ -103,7 +111,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                   ) : (
                     <Ionicons name="chevron-forward" size={16} color={GlassTokens.colors.textMuted} />
                   )}
-                </View>
+                </ScalePressable>
               ))}
             </GlassCard>
           </View>
