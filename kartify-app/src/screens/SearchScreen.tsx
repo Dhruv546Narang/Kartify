@@ -54,6 +54,10 @@ function ResultCard({ item, onPress }: { item: GroupedProduct; onPress: () => vo
   const cheapest = item.platforms[0];
   const imageUri = item.image_url || item.image || '';
 
+  useEffect(() => {
+    setImgErr(false);
+  }, [imageUri]);
+
   return (
     <Pressable onPress={onPress}
       style={({ pressed }) => [styles.resultCard, { transform: [{ scale: pressed ? 0.98 : 1 }] }]}>

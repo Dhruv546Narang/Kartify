@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Alert, Dimensions, Image, Pressable, ScrollView, Share, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -138,6 +138,10 @@ export default function ProductDetailScreen({ route, navigation }: { route: any;
   }
 
   const imageUri = product.image || product.image_url || product.imageUrl;
+
+  useEffect(() => {
+    setImgErr(false);
+  }, [imageUri]);
 
   return (
     <View style={styles.safe}>

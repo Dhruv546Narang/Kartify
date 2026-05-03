@@ -91,6 +91,7 @@ function AnimatedPlaceholder() {
 /* ── Product image with fallback ── */
 function ProductImg({ uri, size }: { uri: string; size: number }) {
   const [f, setF] = useState(false);
+  useEffect(() => { setF(false); }, [uri]);
   if (f || !uri) return <View style={{ width: size, height: size, borderRadius: 12, backgroundColor: '#F0F4EF', alignItems: 'center', justifyContent: 'center' }}><Ionicons name="bag-handle-outline" size={size * 0.38} color="#7A8C7B" /></View>;
   return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: 12, backgroundColor: '#f5f7f4' }} resizeMode="contain" onError={() => setF(true)} />;
 }
