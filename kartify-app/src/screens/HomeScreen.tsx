@@ -20,6 +20,7 @@ import { GlassTokens } from '../components/GlassPrimitives';
 import PlatformBadge from '../components/PlatformBadge';
 import { useAuthStore } from '../store/authStore';
 import { useLocationWeather } from '../hooks/useLocationWeather';
+import client from '../api/client';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -155,8 +156,19 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const slideWidth = SCREEN_W - 32;
   const [locationModal, setLocationModal] = useState(false);
   const [deliveryCity, setDeliveryCity] = useState(city);
+  const [deals, setDeals] = useState<any[]>(DEALS);
+  const [categories, setCategories] = useState<any[]>(CATEGORIES);
 
   useEffect(() => { setDeliveryCity(city); }, [city]);
+
+  useEffect(() => {
+    client.get('/deals/trending').then(res => {
+      if (res.data?.deals?.length) setDeals(res.data.deals);
+    }).catch(console.warn);
+    client.get('/deals/categories').then(res => {
+      if (res.data?.categories?.length) setCategories(res.data.categories);
+    }).catch(console.warn);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -243,11 +255,17 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
         {/* ── Categories → SearchTab with category ── */}
         <SectionHeader title="Categories" />
-        <FlatList data={CATEGORIES} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 24, gap: 10 }} keyExtractor={(i) => i.id}
+        <FlatList data={categories} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 24, gap: 10 }} keyExtractor={(i) => i.id}
           renderItem={({ item }) => (
             <Pressable onPress={() => navigation.navigate('SearchTab', { categoryFilter: item.id, categoryName: item.label })}
               style={({ pressed }) => ({ width: 80, height: 88, borderRadius: 20, backgroundColor: item.color, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', overflow: 'hidden', transform: [{ scale: pressed ? 0.95 : 1 }] })}>
-              <Image source={{ uri: item.image }} style={{ width: 80, height: 56 }} resizeMode="cover" />
+              {item.image ? (
+                <Image source={{ uri: item.image }} style={{ width: 80, height: 56 }} resizeMode="cover" />
+              ) : (
+                <View style={{ width: 80, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 28 }}>{item.emoji}</Text>
+                </View>
+              )}
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 }}>
                 <Text style={styles.categoryLabel} numberOfLines={2}>{item.label}</Text>
               </View>
@@ -275,17 +293,17 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
         {/* ── Deals → ProductDetail ── */}
         <SectionHeader title="Best Deals Right Now 🔥" />
-        {DEALS.map((item) => (
+        {deals.map((item) => (
           <Pressable key={item.id} onPress={() => goToProduct(item)} style={({ pressed }) => [styles.dealCard, { transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
             <View style={styles.dealImgWrap}><ProductImg uri={item.image} size={64} /></View>
             <View style={styles.dealCenter}>
-              <Text style={styles.dealName} numberOfLines={2}>{item.name}</Text>
+              <Text style={styles.dealName} numberOfLines={2}>{item.name || item.product_name}</Text>
               <Text style={styles.dealUnit}>{item.unit}</Text>
-              <View style={styles.dealMetaRow}><PlatformBadge platform={item.platform} compact /><Text style={styles.oldPrice}>{formatINR(item.old)}</Text></View>
+              <View style={styles.dealMetaRow}><PlatformBadge platform={item.platform} compact /><Text style={styles.oldPrice}>{formatINR(item.old_price || item.old)}</Text></View>
             </View>
             <View style={styles.dealRight}>
               <Text style={styles.dealPrice}>{formatINR(item.price)}</Text>
-              <View style={styles.discBadge}><Text style={styles.discText}>{item.off} OFF</Text></View>
+              <View style={styles.discBadge}><Text style={styles.discText}>{item.off || `${item.drop_pct}%`} OFF</Text></View>
             </View>
           </Pressable>
         ))}

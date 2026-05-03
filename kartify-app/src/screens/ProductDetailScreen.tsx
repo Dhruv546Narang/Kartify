@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PLATFORM_STYLES } from '../components/PlatformBadge';
 import { useCart } from '../hooks/useCart';
+import client from '../api/client';
 
 const SCREEN_W = Dimensions.get('window').width;
 function formatINR(v: number) { return `₹${Math.round(v).toLocaleString('en-IN')}`; }
@@ -76,6 +77,26 @@ export default function ProductDetailScreen({ route, navigation }: { route: any;
   const [quantity, setQuantity] = useState(1);
   const [imgErr, setImgErr] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [settingAlert, setSettingAlert] = useState(false);
+
+  const handleSetAlert = async () => {
+    if (!platforms.length || settingAlert) return;
+    setSettingAlert(true);
+    const target = Math.round((platforms[0]?.price || 100) * 0.9);
+    try {
+      await client.post('/alerts', {
+        product_name: product.name || product.product_name || 'Unknown Product',
+        target_price: target,
+        platform: platforms[0]?.platform || '',
+        product_catalog_id: product.id || '',
+      });
+      Alert.alert('Price Alert Set!', `We'll notify you when the price drops below ${formatINR(target)}`);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not set alert');
+    } finally {
+      setSettingAlert(false);
+    }
+  };
 
   const handleAddToCart = async () => {
     if (!selectedPlatform || adding) return;
@@ -151,10 +172,10 @@ export default function ProductDetailScreen({ route, navigation }: { route: any;
           <MiniPriceChart basePrice={platforms[0]?.price || 100} />
 
           {/* Set Price Alert */}
-          <Pressable onPress={() => Alert.alert('Price Alert Set!', `We'll notify you when ${product.name || 'this product'} drops below ${formatINR(Math.round((platforms[0]?.price || 100) * 0.9))}`)}
+          <Pressable onPress={handleSetAlert}
             style={({ pressed }) => [styles.alertBtn, { transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
             <Ionicons name="notifications-outline" size={18} color="#C4855A" />
-            <Text style={styles.alertBtnText}>Set Price Alert</Text>
+            <Text style={styles.alertBtnText}>{settingAlert ? 'Setting...' : 'Set Price Alert'}</Text>
             <Text style={styles.alertBtnTarget}>Target: {formatINR(Math.round((platforms[0]?.price || 100) * 0.9))}</Text>
           </Pressable>
 

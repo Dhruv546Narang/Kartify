@@ -1,12 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   ActivityIndicator, FlatList, Pressable, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, View, Modal,
+  StatusBar, StyleSheet, Text, TextInput, View, Modal, RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PLATFORM_STYLES } from '../components/PlatformBadge';
+import client from '../api/client';
 
 /* ═══════════════════════════════════════════════════════
    TYPES
@@ -158,8 +159,43 @@ function PriceDropCard({ item, onPress }: { item: typeof PRICE_DROPS[0]; onPress
 type FilterType = 'all' | 'active' | 'triggered' | 'expired';
 
 export default function AlertsScreen({ navigation }: { navigation: any }) {
-  const [alerts] = useState<PriceAlert[]>(MOCK_ALERTS);
+  const [alerts, setAlerts] = useState<PriceAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
+
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res = await client.get('/alerts');
+      if (res.data?.alerts) {
+        setAlerts(res.data.alerts.map((a: any) => ({
+          id: a.id,
+          productName: a.product_name,
+          brand: a.brand || '',
+          unit: a.unit || '',
+          currentPrice: a.current_price || a.target_price, // fallback
+          targetPrice: a.target_price,
+          lowestPlatform: a.platform || 'Unknown',
+          status: a.status,
+          createdAt: new Date(a.created_at).toLocaleDateString(),
+        })));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch alerts', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchAlerts();
+  };
 
   const filteredAlerts = alerts.filter(a => filter === 'all' || a.status === filter);
   const activeCount = alerts.filter(a => a.status === 'active').length;
@@ -175,7 +211,14 @@ export default function AlertsScreen({ navigation }: { navigation: any }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scroll} 
+        contentContainerStyle={{ paddingBottom: 120 }} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4F7A55" />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -235,7 +278,9 @@ export default function AlertsScreen({ navigation }: { navigation: any }) {
 
         {/* Alert Cards */}
         <View style={{ paddingHorizontal: 16 }}>
-          {filteredAlerts.length === 0 ? (
+          {loading ? (
+             <ActivityIndicator size="large" color="#4F7A55" style={{ marginTop: 40 }} />
+          ) : filteredAlerts.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={{ fontSize: 48 }}>🔔</Text>
               <Text style={styles.emptyTitle}>No alerts yet</Text>
