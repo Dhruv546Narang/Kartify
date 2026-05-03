@@ -1,11 +1,70 @@
-import React, { useState } from 'react';
-import { Alert, Image, Linking, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Alert, Dimensions, Image, Pressable, ScrollView, Share, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { PLATFORM_STYLES } from '../components/PlatformBadge';
 import { useCart } from '../hooks/useCart';
 
+const SCREEN_W = Dimensions.get('window').width;
 function formatINR(v: number) { return `₹${Math.round(v).toLocaleString('en-IN')}`; }
+
+/* ── Mock 7-day price history ── */
+function genHistory(base: number) {
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Today'];
+  return days.map((d,i) => ({ day: d, price: Math.round(base + (Math.random()-0.4)*base*0.15) }));
+}
+
+function MiniPriceChart({ basePrice }: { basePrice: number }) {
+  const data = useMemo(() => genHistory(basePrice), [basePrice]);
+  const max = Math.max(...data.map(d=>d.price));
+  const min = Math.min(...data.map(d=>d.price));
+  const range = max - min || 1;
+  const W = SCREEN_W - 64;
+  const H = 80;
+  const step = W / (data.length - 1);
+  const points = data.map((d,i) => ({ x: i*step, y: H - ((d.price-min)/range)*H }));
+  const pathD = points.map((p,i) => `${i===0?'M':'L'}${p.x},${p.y}`).join(' ');
+
+  return (
+    <View style={s2.chartWrap}>
+      <View style={s2.chartHeader}>
+        <Text style={s2.chartTitle}>7-Day Price Trend</Text>
+        <View style={s2.chartRange}>
+          <Text style={s2.chartLow}>Low {formatINR(min)}</Text>
+          <Text style={s2.chartHigh}>High {formatINR(max)}</Text>
+        </View>
+      </View>
+      <View style={{ height: H+20, marginTop: 8 }}>
+        <View style={{ position:'absolute', top:0, left:0, right:0, bottom:20 }}>
+          {points.map((p,i) => (
+            <View key={i} style={{ position:'absolute', left:p.x-3, top:p.y-3, width:6, height:6, borderRadius:3, backgroundColor: i===points.length-1 ? '#4F7A55' : '#7A9E7E' }} />
+          ))}
+          {points.slice(0,-1).map((p,i) => {
+            const next = points[i+1];
+            const dx = next.x-p.x, dy = next.y-p.y;
+            const len = Math.sqrt(dx*dx+dy*dy);
+            const angle = Math.atan2(dy,dx)*180/Math.PI;
+            return <View key={`l${i}`} style={{ position:'absolute', left:p.x, top:p.y, width:len, height:2, backgroundColor:'rgba(122,158,126,0.3)', transformOrigin:'left center', transform:[{rotate:`${angle}deg`}] }} />;
+          })}
+        </View>
+        <View style={{ position:'absolute', bottom:0, left:0, right:0, flexDirection:'row', justifyContent:'space-between' }}>
+          {data.map((d,i) => <Text key={i} style={[s2.chartDayLabel, i===data.length-1 && {color:'#4F7A55',fontFamily:'Nunito_700Bold'}]}>{d.day}</Text>)}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const s2 = StyleSheet.create({
+  chartWrap: { marginHorizontal:16, marginBottom:16, borderRadius:16, padding:14, backgroundColor:'rgba(255,255,255,0.25)', borderWidth:1, borderColor:'rgba(255,255,255,0.45)' },
+  chartHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
+  chartTitle: { fontFamily:'Nunito_700Bold', fontSize:14, color:'#2C3E2D' },
+  chartRange: { flexDirection:'row', gap:10 },
+  chartLow: { fontFamily:'Nunito_600SemiBold', fontSize:11, color:'#4F7A55' },
+  chartHigh: { fontFamily:'Nunito_600SemiBold', fontSize:11, color:'#C4855A' },
+  chartDayLabel: { fontFamily:'Nunito_600SemiBold', fontSize:10, color:'#7A8C7B', width:36, textAlign:'center' },
+});
 
 export default function ProductDetailScreen({ route, navigation }: { route: any; navigation: any }) {
   const insets = useSafeAreaInsets();
@@ -69,7 +128,9 @@ export default function ProductDetailScreen({ route, navigation }: { route: any;
             <Ionicons name="chevron-back" size={22} color="#2C3E2D" />
           </Pressable>
           <Text style={styles.headerTitle}>Compare Prices</Text>
-          <View style={{ width: 40 }} />
+          <Pressable onPress={() => Share.share({ message: `Check out ${product?.name} on Kartify! Compare prices across Blinkit, Zepto & more.` })} style={({ pressed }) => [styles.backBtn, { transform: [{ scale: pressed ? 0.92 : 1 }] }]}>
+            <Ionicons name="share-outline" size={20} color="#2C3E2D" />
+          </Pressable>
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
@@ -85,6 +146,17 @@ export default function ProductDetailScreen({ route, navigation }: { route: any;
             <Text style={styles.heroName}>{product.name || product.product_name}</Text>
             <Text style={styles.heroUnit}>{product.unit || ''}</Text>
           </View>
+
+          {/* Price History Chart */}
+          <MiniPriceChart basePrice={platforms[0]?.price || 100} />
+
+          {/* Set Price Alert */}
+          <Pressable onPress={() => Alert.alert('Price Alert Set!', `We'll notify you when ${product.name || 'this product'} drops below ${formatINR(Math.round((platforms[0]?.price || 100) * 0.9))}`)}
+            style={({ pressed }) => [styles.alertBtn, { transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
+            <Ionicons name="notifications-outline" size={18} color="#C4855A" />
+            <Text style={styles.alertBtnText}>Set Price Alert</Text>
+            <Text style={styles.alertBtnTarget}>Target: {formatINR(Math.round((platforms[0]?.price || 100) * 0.9))}</Text>
+          </Pressable>
 
           {/* Platform selection */}
           <Text style={styles.choosePlatform}>CHOOSE PLATFORM</Text>
@@ -189,6 +261,9 @@ const styles = StyleSheet.create({
   heroImgWrap: { width: 120, height: 120, borderRadius: 20, backgroundColor: 'rgba(240,244,239,0.9)', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   heroName: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 22, color: '#2C3E2D', textAlign: 'center', marginBottom: 4 },
   heroUnit: { fontSize: 14, color: '#7A8C7B', fontFamily: 'Nunito_600SemiBold' },
+  alertBtn: { marginHorizontal: 16, marginBottom: 16, borderRadius: 14, padding: 14, backgroundColor: 'rgba(196,133,90,0.08)', borderWidth: 1, borderColor: 'rgba(196,133,90,0.25)', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  alertBtnText: { flex: 1, fontFamily: 'Nunito_700Bold', fontSize: 14, color: '#C4855A' },
+  alertBtnTarget: { fontFamily: 'Nunito_600SemiBold', fontSize: 12, color: '#7A8C7B' },
   choosePlatform: { fontSize: 13, fontFamily: 'Nunito_700Bold', color: '#2C3E2D', paddingHorizontal: 16, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   platformRow: { marginHorizontal: 16, marginBottom: 10, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center' },
   platformPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, minWidth: 90, alignItems: 'center' },

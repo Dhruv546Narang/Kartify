@@ -8,7 +8,7 @@ for India's quick commerce platforms.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import get_settings
-from routers import auth, search, cart, history
+from routers import auth, search, cart, history, deals, alerts
 
 # Load settings
 settings = get_settings()
@@ -36,6 +36,8 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(cart.router)
 app.include_router(history.router)
+app.include_router(deals.router)
+app.include_router(alerts.router)
 
 
 @app.get("/health", tags=["Health"])
