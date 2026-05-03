@@ -74,11 +74,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
       <StatusBar translucent barStyle="dark-content" backgroundColor="transparent" />
       <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
-          <ScalePressable style={styles.backButton} activeStyle={styles.pressActive} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={20} color={GlassTokens.colors.textPrimary} />
-          </ScalePressable>
           <Text style={styles.title}>Profile</Text>
-          <View style={styles.backButton} />
         </View>
 
         <View style={styles.avatarSection}>

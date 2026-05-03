@@ -107,7 +107,7 @@ export default function CartScreen({ navigation }: { navigation: any }) {
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.container}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => navigation.navigate('HomeTab')} style={({ pressed }) => [styles.backBtn, { transform: [{ scale: pressed ? 0.92 : 1 }] }]}>
+          <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.backBtn, { transform: [{ scale: pressed ? 0.92 : 1 }] }]}>
             <Ionicons name="chevron-back" size={20} color="#2C3E2D" />
           </Pressable>
           <Text style={styles.title}>My Cart</Text>

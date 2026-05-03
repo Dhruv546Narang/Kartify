@@ -185,10 +185,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             <Text style={styles.brandText}>Kartify</Text>
           </View>
           <View style={styles.topActions}>
-            <Pressable onPress={() => navigation.navigate('HistoryTab')} style={({ pressed }) => [styles.iconWrap, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+            <Pressable onPress={() => navigation.navigate('AlertsTab')} style={({ pressed }) => [styles.iconWrap, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
               <Ionicons name="notifications-outline" size={22} color="#2C3E2D" />
             </Pressable>
-            <Pressable onPress={() => navigation.getParent()?.navigate('Profile')} style={({ pressed }) => [styles.avatar, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+            <Pressable onPress={() => navigation.navigate('ProfileTab')} style={({ pressed }) => [styles.avatar, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
               <Text style={styles.avatarText}>{initials}</Text>
             </Pressable>
           </View>
@@ -256,7 +256,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         />
 
         {/* ── Buy Again → ProductDetail ── */}
-        <SectionHeader title="Buy Again" actionLabel="See all" onAction={() => navigation.navigate('HistoryTab')} />
+        <SectionHeader title="Buy Again" actionLabel="See all" onAction={() => navigation.getParent()?.navigate('History')} />
         <FlatList data={BUY_AGAIN} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 24, gap: 12 }} keyExtractor={(i) => i.id}
           renderItem={({ item }) => (
             <Pressable onPress={() => goToProduct(item)} style={({ pressed }) => [styles.buyAgainCard, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
@@ -290,9 +290,8 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           </Pressable>
         ))}
 
-        <Pressable onPress={logout} style={({ pressed }) => [styles.signOutBtn, { transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </Pressable>
+
+
       </ScrollView>
     </SafeAreaView>
   );

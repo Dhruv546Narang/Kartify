@@ -35,6 +35,8 @@ import SearchScreen from './src/screens/SearchScreen';
 import CartScreen from './src/screens/CartScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AlertsScreen from './src/screens/AlertsScreen';
+import SavingsScreen from './src/screens/SavingsScreen';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import CheckoutScreen from './src/screens/CheckoutScreen';
 import { ScalePressable } from './src/components/GlassPrimitives';
@@ -58,9 +60,10 @@ const TAB_META: Record<
   { label: string; icon: keyof typeof Ionicons.glyphMap }
 > = {
   HomeTab: { label: 'Home', icon: 'home-outline' },
-  SearchTab: { label: 'Explore', icon: 'compass-outline' },
-  CartTab: { label: 'Deals', icon: 'pricetags-outline' },
-  HistoryTab: { label: 'History', icon: 'time-outline' },
+  SearchTab: { label: 'Search', icon: 'search-outline' },
+  AlertsTab: { label: 'Alerts', icon: 'notifications-outline' },
+  SavingsTab: { label: 'Savings', icon: 'wallet-outline' },
+  ProfileTab: { label: 'Profile', icon: 'person-outline' },
 };
 
 function AuthNavigator() {
@@ -131,24 +134,22 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         })}
       </View>
 
-      {/* Hide FAB on Cart tab */}
-      {state.routes[state.index]?.name !== 'CartTab' && (
-        <ScalePressable
-          onPress={() => navigation.navigate('CartTab')}
-          style={[
-            styles.floatingCart,
-            { bottom: insets.bottom + 74 },
-          ]}
-          activeStyle={styles.floatingCartActive}
-        >
-          <Ionicons name="cart-outline" size={24} color="#FFFFFF" />
-          {cartCount > 0 ? (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
-            </View>
-          ) : null}
-        </ScalePressable>
-      )}
+      {/* Floating cart FAB */}
+      <ScalePressable
+        onPress={() => navigation.getParent()?.navigate('Cart')}
+        style={[
+          styles.floatingCart,
+          { bottom: insets.bottom + 74 },
+        ]}
+        activeStyle={styles.floatingCartActive}
+      >
+        <Ionicons name="cart-outline" size={24} color="#FFFFFF" />
+        {cartCount > 0 ? (
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
+          </View>
+        ) : null}
+      </ScalePressable>
     </View>
   );
 }
@@ -163,8 +164,9 @@ function TabsNavigator() {
     >
       <AppTab.Screen name="HomeTab" component={HomeScreen} />
       <AppTab.Screen name="SearchTab" component={SearchScreen} />
-      <AppTab.Screen name="CartTab" component={CartScreen} />
-      <AppTab.Screen name="HistoryTab" component={HistoryScreen} />
+      <AppTab.Screen name="AlertsTab" component={AlertsScreen} />
+      <AppTab.Screen name="SavingsTab" component={SavingsScreen} />
+      <AppTab.Screen name="ProfileTab" component={ProfileScreen} />
     </AppTab.Navigator>
   );
 }
@@ -177,15 +179,24 @@ function AppNavigator() {
       }}
     >
       <AppStack.Screen name="MainTabs" component={TabsNavigator} />
-      <AppStack.Screen name="Profile" component={ProfileScreen} />
       <AppStack.Screen
         name="ProductDetail"
         component={ProductDetailScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <AppStack.Screen
+        name="Cart"
+        component={CartScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <AppStack.Screen
         name="Checkout"
         component={CheckoutScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <AppStack.Screen
+        name="History"
+        component={HistoryScreen}
         options={{ animation: 'slide_from_right' }}
       />
     </AppStack.Navigator>
