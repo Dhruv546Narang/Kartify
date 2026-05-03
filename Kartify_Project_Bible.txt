@@ -1,0 +1,531 @@
+KARTIFY
+Project Bible & Development Handbook
+One Cart. Every Platform. Best Price.
+A universal cart and price comparison app for India's quick commerce ecosystem.
+Developer
+Dhruv Narang
+B.Tech CSE | SRM University Haryana
+GitHub: Dhruv546Narang
+Last Updated: 12 April 2026
+1. Vision & Problem Statement
+1.1 The Problem
+India's quick commerce market has exploded. As of 2024, platforms like Blinkit, Zepto, Swiggy Instamart, BigBasket Now, and JioMart all operate independently with their own apps, pricing, and checkout flows. A user buying groceries or essentials has to:
+Open 3–5 different apps to compare prices for the same item.
+Maintain separate carts on each platform.
+Checkout multiple times with different payment flows.
+Miss out on the best deal simply because they didn't check every app.
+This is a fragmented, time-wasting experience. No unified layer exists for Indian quick commerce.
+1.2 The Solution — Kartify
+Kartify is a React Native mobile app that serves as a universal price comparison and cart aggregation layer on top of India's quick commerce platforms. Users search for a product once, see prices across all platforms, add items to a unified cart, and then intelligently checkout through the cheapest or fastest option.
+Core value proposition in one line:
+"Search once. Compare all. Checkout smart."
+1.3 Target Users
+User Type
+Description
+Urban Grocery Shoppers
+Daily essential buyers in Tier 1 cities who order from quick commerce regularly.
+Price-Conscious Millennials
+Users who care about getting the best deal and don't mind switching platforms.
+Busy Professionals
+People who want to save time — one search, best result, done.
+Multi-platform Power Users
+Already use 2–3 quick commerce apps and want to consolidate.
+2. Tech Stack
+2.1 Stack Overview
+Layer
+Technology
+Mobile Frontend
+React Native + Expo (SDK 51+)
+Backend API
+Python + FastAPI
+Database
+Supabase (PostgreSQL)
+Cache / Rate Limit
+Redis via Upstash (serverless Redis)
+Deployment
+Railway (backend), Expo EAS (app builds)
+External Data
+QuickCommerce API (price data aggregator)
+Auth
+Supabase Auth (email/password + Google OAuth)
+State Management
+Zustand (lightweight global state)
+Navigation
+React Navigation v6 (stack + tabs)
+Styling
+NativeWind (Tailwind for React Native)
+Storage (local)
+Expo SecureStore / AsyncStorage
+2.2 Why These Choices
+React Native + Expo
+Expo gives access to a managed workflow, OTA updates, and EAS Build for CI/CD — all without needing a Mac for iOS builds initially. React Native means one codebase for Android and iOS. Expo SDK 51+ is stable and battle-tested.
+FastAPI
+Async Python, automatic OpenAPI docs, Pydantic validation, blazing fast with uvicorn. Perfectly suited for an API that makes multiple external calls (to QuickCommerce API) and aggregates results quickly. Already familiar from prior projects.
+Supabase
+Managed Postgres with a REST API, real-time subscriptions, Row Level Security, and built-in auth. Replaces the need for a separate auth service and gives a dashboard for inspecting data. Free tier is generous.
+Upstash Redis
+Serverless Redis that works perfectly on Railway's ephemeral container model. Used for: caching QuickCommerce API responses (to avoid re-fetching for same product), rate limiting endpoints, and storing short-lived session data.
+Railway
+Zero-DevOps deployment for the FastAPI backend. Supports environment variables, automatic deploys from GitHub, and has a free starter plan. Much simpler than AWS or GCP for a solo developer.
+3. Architecture
+3.1 High-Level Architecture
+The system has three main layers:
+Layer
+Components
+Client (Mobile)
+React Native app — handles UI, local state, auth tokens, and user interactions.
+Backend (API)
+FastAPI server — orchestrates QuickCommerce API calls, handles auth, applies business logic, writes/reads Supabase, uses Redis cache.
+Data Layer
+Supabase (persistent user data, carts, history) + Upstash Redis (ephemeral cache + rate limits) + QuickCommerce API (real-time price data).
+3.2 Request Flow — Product Search
+A typical search request flows as follows:
+User types a product name in the search bar on the React Native app.
+App sends GET /search?q=<query> to the FastAPI backend with auth token.
+FastAPI checks Upstash Redis cache for this query. If found (cache hit), return immediately.
+If cache miss: FastAPI calls QuickCommerce API with the query.
+QuickCommerce API returns prices from Blinkit, Zepto, Instamart, BigBasket, JioMart.
+FastAPI normalizes and sorts the response, writes to Redis cache (TTL: 10 minutes).
+FastAPI returns the unified price list to the React Native app.
+App displays results as a ranked list with platform badges and price highlights.
+3.3 Database Schema (Supabase)
+Table: users
+Column
+Type
+Description
+id
+UUID (PK)
+Supabase Auth user ID
+email
+TEXT
+User email
+name
+TEXT
+Display name
+created_at
+TIMESTAMPTZ
+Account creation time
+preferred_platform
+TEXT
+User's default preferred platform
+Table: carts
+Column
+Type
+Description
+id
+UUID (PK)
+Cart ID
+user_id
+UUID (FK)
+References users.id
+name
+TEXT
+Cart name (e.g. 'Weekly Groceries')
+created_at
+TIMESTAMPTZ
+Creation time
+is_active
+BOOLEAN
+Whether cart is currently active
+Table: cart_items
+Column
+Type
+Description
+id
+UUID (PK)
+Item ID
+cart_id
+UUID (FK)
+References carts.id
+product_name
+TEXT
+Product name as searched
+platform
+TEXT
+Selected platform (e.g. 'blinkit')
+price
+NUMERIC
+Price at time of adding
+quantity
+INTEGER
+Quantity
+product_id
+TEXT
+Platform-specific product ID
+added_at
+TIMESTAMPTZ
+Timestamp
+Table: search_history
+Column
+Type
+Description
+id
+UUID (PK)
+Record ID
+user_id
+UUID (FK)
+References users.id
+query
+TEXT
+Search term used
+searched_at
+TIMESTAMPTZ
+Timestamp
+4. Backend — FastAPI
+4.1 Project Structure
+The FastAPI backend follows a clean modular layout:
+kartify-backend/
+├── main.py              # App entry point, CORS, router registration
+├── config.py            # Settings via pydantic-settings (.env loading)
+├── requirements.txt
+├── .env
+├── routers/
+│   ├── auth.py          # /auth/signup, /auth/login, /auth/me
+│   ├── search.py        # /search (QuickCommerce API proxy + cache)
+│   ├── cart.py          # /cart CRUD endpoints
+│   └── history.py       # /history endpoints
+├── services/
+│   ├── quickcommerce.py # QuickCommerce API client
+│   ├── cache.py         # Redis/Upstash helper
+│   └── supabase.py      # Supabase client init
+├── models/
+│   ├── cart.py          # Pydantic request/response models
+│   └── search.py
+└── middleware/
+    └── auth.py          # JWT verification middleware
+4.2 API Endpoints
+Method + Path
+Auth Required
+Description
+POST /auth/signup
+No
+Register new user
+POST /auth/login
+No
+Login, get JWT
+GET /auth/me
+Yes
+Get current user profile
+GET /search?q=query
+Yes
+Search products across platforms
+GET /cart
+Yes
+Get all user carts
+POST /cart
+Yes
+Create a new cart
+GET /cart/{id}
+Yes
+Get specific cart + items
+POST /cart/{id}/items
+Yes
+Add item to cart
+DELETE /cart/{id}/items/{item_id}
+Yes
+Remove item from cart
+DELETE /cart/{id}
+Yes
+Delete entire cart
+GET /history
+Yes
+Get user's search history
+4.3 Environment Variables (.env)
+Variable
+Purpose
+SUPABASE_URL
+Supabase project URL
+SUPABASE_KEY
+Supabase service role key
+SUPABASE_JWT_SECRET
+Secret to verify Supabase JWTs
+UPSTASH_REDIS_URL
+Upstash Redis REST URL
+UPSTASH_REDIS_TOKEN
+Upstash Redis auth token
+QUICKCOMMERCE_API_KEY
+QuickCommerce API key
+QUICKCOMMERCE_BASE_URL
+QuickCommerce API base URL
+ALLOWED_ORIGINS
+CORS allowed origins (frontend URLs)
+4.4 Caching Strategy
+Redis (Upstash) is used for two purposes:
+Search Cache: Key = search:<query_normalized>, TTL = 10 minutes. Avoids repeated QuickCommerce API calls for the same product.
+Rate Limiting: Key = ratelimit:<user_id>, with a sliding window counter. Prevents API abuse. Limit: 60 requests/minute per user.
+Cache invalidation is time-based only (TTL expiry). No manual invalidation needed since price data changes naturally within minutes.
+5. Frontend — React Native + Expo
+5.1 Project Structure
+kartify-app/
+├── App.tsx              # Root, navigation setup
+├── app.json             # Expo config
+├── .env                 # EXPO_PUBLIC_ vars
+├── src/
+│   ├── screens/
+│   │   ├── HomeScreen.tsx
+│   │   ├── SearchScreen.tsx
+│   │   ├── ProductDetailScreen.tsx
+│   │   ├── CartScreen.tsx
+│   │   ├── CheckoutScreen.tsx
+│   │   ├── HistoryScreen.tsx
+│   │   ├── LoginScreen.tsx
+│   │   └── SignupScreen.tsx
+│   ├── components/
+│   │   ├── ProductCard.tsx      # Displays a product with prices
+│   │   ├── PlatformBadge.tsx    # Colored platform label chip
+│   │   ├── PriceTable.tsx       # Platform price comparison table
+│   │   ├── CartItem.tsx
+│   │   └── SearchBar.tsx
+│   ├── store/
+│   │   ├── authStore.ts         # Zustand: user auth state
+│   │   └── cartStore.ts         # Zustand: cart state
+│   ├── api/
+│   │   └── client.ts            # Axios instance with base URL + auth header
+│   ├── hooks/
+│   │   ├── useSearch.ts
+│   │   └── useCart.ts
+│   └── utils/
+│       ├── platformColors.ts    # Platform brand colors
+│       └── formatPrice.ts       # ₹ formatting helper
+5.2 Screen-by-Screen Breakdown
+HomeScreen
+Landing screen after login. Shows: a large search bar at the top, recent searches from search history, quick-access to the current active cart, and a summary of top platform deals of the day (can be mocked initially).
+SearchScreen
+The core screen. User types a query. Results are fetched via GET /search. Results rendered as a list of ProductCards showing the product name and a price comparison row across platforms. Tapping a result opens ProductDetailScreen.
+ProductDetailScreen
+Shows one product with a full PriceTable: all platform prices ranked cheapest to most expensive, delivery ETAs (if available from API), and an Add to Cart button that lets the user pick quantity and platform preference. Can also compare price trend if history is stored.
+CartScreen
+Shows all items in the current cart, grouped by platform. Displays total per platform, and a smart suggestion for the cheapest combination checkout strategy. Button to initiate checkout.
+CheckoutScreen
+Not a real in-app checkout (deep linking to the platform's app is the MVP approach). Shows the checkout breakdown: which items from which platform, totals, and deep link buttons to open Blinkit/Zepto/etc. with the items prefilled (where API allows).
+HistoryScreen
+List of past searches. Tapping re-runs the search. Can be cleared.
+LoginScreen / SignupScreen
+Standard email/password forms. Calls /auth/login and /auth/signup. Stores JWT in Expo SecureStore. Handles error states gracefully.
+5.3 Navigation Structure
+Two navigators are used:
+Auth Stack: Login → Signup (shown when user is not authenticated)
+App Tab Navigator (shown when authenticated): Home | Search | Cart | History
+Stack navigator nested inside App tabs for: Search → ProductDetail, Cart → Checkout
+5.4 State Management with Zustand
+Two Zustand stores:
+authStore: holds { user, token, isLoggedIn }, actions: login(), logout(), loadFromStorage()
+cartStore: holds { carts, activeCartId }, actions: addItem(), removeItem(), setActiveCart()
+cartStore syncs with the backend on every mutation. Optimistic updates are used for a snappy UI, with rollback on error.
+6. QuickCommerce API Integration
+6.1 What It Provides
+The QuickCommerce API is a third-party aggregator that provides product search results and pricing data across Indian quick commerce platforms (Blinkit, Zepto, Swiggy Instamart, BigBasket Now, JioMart). It abstracts away the need to scrape or individually integrate with each platform.
+6.2 Backend Integration Pattern
+In kartify-backend/services/quickcommerce.py:
+import httpx
+import os
+
+QUICKCOMMERCE_BASE_URL = os.getenv("QUICKCOMMERCE_BASE_URL")
+QUICKCOMMERCE_API_KEY = os.getenv("QUICKCOMMERCE_API_KEY")
+
+async def search_products(query: str) -> list[dict]:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{QUICKCOMMERCE_BASE_URL}/search",
+            headers={"Authorization": f"Bearer {QUICKCOMMERCE_API_KEY}"},
+            params={"q": query},
+            timeout=10.0
+        )
+        response.raise_for_status()
+        data = response.json()
+        return normalize_results(data)
+
+def normalize_results(raw: dict) -> list[dict]:
+    # Map platform-specific fields to a unified schema
+    # Returns list of { product_name, platform, price, unit, image_url, eta_minutes }
+    ...
+6.3 Unified Product Schema
+All platform results are normalized to:
+Field
+Description
+product_name
+Normalized product name
+platform
+Platform identifier (e.g. 'blinkit')
+price
+Price in INR (float)
+unit
+Unit or quantity (e.g. '1kg', '500ml')
+image_url
+Product image URL from platform
+eta_minutes
+Estimated delivery time in minutes
+platform_product_id
+Platform's own product ID for deep linking
+in_stock
+Boolean availability status
+6.4 Verification Steps (Before Starting Dev)
+Sign up for QuickCommerce API and obtain API key.
+Verify the base URL and authentication method (Bearer token).
+Run a test search request from terminal using curl to confirm response shape.
+Map actual API response fields to the unified schema above.
+Set QUICKCOMMERCE_BASE_URL and QUICKCOMMERCE_API_KEY in .env.
+Update normalize_results() function to match actual response structure.
+7. Development Phases & Task Breakdown
+Phase 1 — Foundation (Week 1–2)
+Goal: Both frontend and backend running locally with auth working end-to-end.
+Task
+Details
+Backend: Project setup
+Create FastAPI project, install deps, set up folder structure
+Backend: Config & .env
+pydantic-settings config class, all env vars loaded
+Backend: Supabase init
+supabase-py client, verify connection
+Backend: Auth endpoints
+/auth/signup, /auth/login, /auth/me with Supabase Auth
+Backend: JWT middleware
+Verify Supabase JWT on protected routes
+Frontend: Expo project
+npx create-expo-app kartify, set up NativeWind
+Frontend: Navigation
+Auth stack + App tab navigator, placeholder screens
+Frontend: Auth screens
+Login + Signup UI with validation
+Frontend: authStore
+Zustand store, SecureStore token persistence
+Integration test
+Login from app → hit /auth/me → see user data
+Phase 2 — Core Feature: Search (Week 2–3)
+Goal: Search a product from the app and see real prices from QuickCommerce API.
+Task
+Details
+Backend: QuickCommerce client
+httpx async client, normalize_results()
+Backend: Redis cache
+Upstash connection, cache middleware for /search
+Backend: /search endpoint
+Accept query param, call QC API, cache, return normalized list
+Frontend: SearchScreen
+Search bar, loading state, error handling
+Frontend: ProductCard
+Show product name, platform badge, cheapest price
+Frontend: PriceTable
+All platform prices ranked in a table component
+Frontend: ProductDetailScreen
+Full product view with Add to Cart button
+Phase 3 — Cart System (Week 3–4)
+Goal: Users can manage a cart with items from different platforms.
+Task
+Details
+Backend: Cart endpoints
+Full CRUD: create cart, add/remove items, delete cart
+Backend: Supabase tables
+Create carts + cart_items tables with RLS policies
+Frontend: cartStore
+Zustand store syncing with backend
+Frontend: CartScreen
+Display items grouped by platform with subtotals
+Frontend: Add to Cart flow
+Select platform + quantity on ProductDetail → POST to backend
+Frontend: CartItem component
+Swipeable cart item with delete
+Phase 4 — Checkout & History (Week 4–5)
+Goal: Users can checkout via deep links, and see their search history.
+Task
+Details
+Frontend: CheckoutScreen
+Per-platform item groups, totals, open platform buttons
+Frontend: Deep link buttons
+Linking.openURL() to Blinkit/Zepto/etc. app deep links
+Backend: /history endpoint
+Auto-log searches to search_history, GET for retrieval
+Frontend: HistoryScreen
+Display past queries, tap to re-search, clear option
+Frontend: HomeScreen
+Finalize home with history chips + active cart preview
+Phase 5 — Polish & Deploy (Week 5–6)
+Goal: App is production-ready, deployed, and demo-able.
+Task
+Details
+Backend: Railway deploy
+Dockerfile, Railway project setup, env vars, health check
+Backend: Error handling
+Global exception handler, proper HTTP status codes
+Backend: Rate limiting
+Upstash sliding window rate limiter on all endpoints
+Frontend: Empty states
+No results, empty cart, empty history screens
+Frontend: Error handling
+Toast notifications on API errors
+Frontend: Loading skeletons
+Skeleton UI for search results and cart
+Frontend: EAS Build
+Set up EAS, generate .apk for Android demo
+Testing
+Manual E2E test of all flows, fix bugs
+8. Known Risks & Mitigation
+Risk
+Mitigation
+QuickCommerce API rate limits or downtime
+Redis caching minimizes API calls. Add fallback mock data for demo purposes.
+QuickCommerce API schema changes
+Keep normalize_results() isolated. Unit test it separately.
+Deep links not working on all platforms
+Test each platform. Fall back to opening the platform's web URL if deep link fails.
+Expo version mismatches (seen before)
+Pin SDK version in app.json. Don't upgrade mid-development.
+Railway cold starts
+Use Railway's always-on plan if needed, or add a keep-alive ping.
+Supabase RLS misconfiguration
+Test RLS policies thoroughly. Use Supabase dashboard to verify data isolation.
+9. Future Features (Post-MVP)
+9.1 Smart Cart Optimizer
+Given a cart of N items, find the optimal split across platforms that minimizes total cost + delivery fee. This is a combinatorial optimization problem — can use a greedy algorithm or even a simple LP solver.
+9.2 Price Drop Alerts
+Users can watch a product and get a push notification (via Expo Notifications + a backend cron job) when its price drops below a threshold on any platform.
+9.3 Shared Carts
+Multiple users (e.g. a household) can share a cart. Built on Supabase real-time subscriptions.
+9.4 AI Deal Recommender
+An AI layer (Claude API) that looks at a user's purchase history and proactively recommends deals or restocking reminders. ('You usually buy milk every 5 days — Zepto has it 20% off today.')
+9.5 Platform Wallet/Coupon Tracking
+Let users input their wallet balances on each platform, so the checkout optimizer can factor in effective prices after coupon/cashback applied.
+9.6 Monetization Path
+Affiliate commissions from platforms when users checkout through Kartify.
+Premium subscription: price history graphs, unlimited price alerts, family cart sharing.
+B2B: White-label the comparison engine for grocery deal aggregator sites.
+10. Quick Reference Cheatsheet
+Use this section when resuming development in a new conversation or after a break.
+Repo / Project Names
+Backend repo: kartify-backend
+Frontend repo: kartify-app
+Railway project: kartify-backend
+Supabase project: kartify
+Expo project slug: kartify
+Docker Hub (if needed): dhruvzie/kartify-backend
+Key Commands
+# Backend
+cd kartify-backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend
+cd kartify-app
+npx expo start
+npx expo start --tunnel   # if on different networks
+
+# EAS Build (Android APK)
+eas build --profile preview --platform android
+Status Tracker
+Milestone
+Status
+Phase 1: Foundation + Auth
+Not Started
+Phase 2: Search + QuickCommerce API
+Not Started
+Phase 3: Cart System
+Not Started
+Phase 4: Checkout + History
+Not Started
+Phase 5: Deploy + Polish
+Not Started
+Backend deployed to Railway
+Not Started
+Android APK built via EAS
+Not Started
+— End of Kartify Project Bible —
